@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FanGraph Insights Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --fanatics-red: #E31837;
+            --fanatics-dark-red: #B71430;
+            --fanatics-black: #1A1A1A;
+            --fanatics-dark: #0D0D0D;
+            --fanatics-gray: #2D2D2D;
+            --fanatics-light-gray: #404040;
+            --fanatics-white: #FFFFFF;
+            --fanatics-off-white: #F5F5F5;
+            --accent-gold: #FFD700;
+            --accent-blue: #4A90D9;
+            --accent-green: #28A745;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, var(--fanatics-dark) 0%, var(--fanatics-black) 100%);
+            color: var(--fanatics-white);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(90deg, var(--fanatics-red) 0%, var(--fanatics-dark-red) 100%);
+            padding: 1.5rem 2rem;
+            box-shadow: 0 4px 20px rgba(227, 24, 55, 0.3);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-content {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--fanatics-white);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            color: var(--fanatics-red);
+            font-size: 1.5rem;
+        }
+
+        .logo-text h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .logo-text span {
+            font-size: 0.85rem;
+            opacity: 0.9;
+            font-weight: 400;
+        }
+
+        .header-stats {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .header-stat {
+            text-align: right;
+        }
+
+        .header-stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .header-stat-label {
+            font-size: 0.75rem;
+            opacity: 0.85;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Navigation */
+        .nav {
+            background: var(--fanatics-gray);
+            padding: 0.75rem 2rem;
+            border-bottom: 1px solid var(--fanatics-light-gray);
+        }
+
+        .nav-content {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .nav-btn {
+            background: transparent;
+            border: 1px solid var(--fanatics-light-gray);
+            color: var(--fanatics-white);
+            padding: 0.6rem 1.25rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+
+        .nav-btn:hover, .nav-btn.active {
+            background: var(--fanatics-red);
+            border-color: var(--fanatics-red);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(227, 24, 55, 0.4);
+        }
+
+        /* Main Content */
+        .main {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Section */
+        .section {
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .section.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .section-header {
+            margin-bottom: 1.5rem;
+        }
+
+        .section-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .section-title-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--fanatics-red);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+
+        .section-subtitle {
+            color: #888;
+            font-size: 1rem;
+        }
+
+        .prompt-box {
+            background: var(--fanatics-gray);
+            border-left: 4px solid var(--fanatics-red);
+            padding: 1rem 1.5rem;
+            border-radius: 0 8px 8px 0;
+            margin-bottom: 2rem;
+        }
+
+        .prompt-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--fanatics-red);
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .prompt-text {
+            font-size: 1.1rem;
+            font-style: italic;
+            color: var(--fanatics-off-white);
+        }
+
+        /* Cards Grid */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--fanatics-gray);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--fanatics-light-gray);
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+            border-color: var(--fanatics-red);
+        }
+
+        .card-value {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: var(--fanatics-red);
+            margin-bottom: 0.25rem;
+        }
+
+        .card-label {
+            font-size: 0.9rem;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .card-change {
+            margin-top: 0.75rem;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .card-change.positive { color: var(--accent-green); }
+        .card-change.negative { color: var(--fanatics-red); }
+
+        /* Chart Container */
+        .chart-container {
+            background: var(--fanatics-gray);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            border: 1px solid var(--fanatics-light-gray);
+        }
+
+        .chart-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Insights Box */
+        .insights-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .insight-card {
+            background: linear-gradient(135deg, var(--fanatics-gray) 0%, var(--fanatics-light-gray) 100%);
+            border-radius: 12px;
+            padding: 1.25rem;
+            border-left: 4px solid var(--fanatics-red);
+        }
+
+        .insight-title {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--fanatics-red);
+        }
+
+        .insight-text {
+            font-size: 0.9rem;
+            color: #ccc;
+            line-height: 1.6;
+        }
+
+        /* Data Table */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        .data-table th, .data-table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--fanatics-light-gray);
+        }
+
+        .data-table th {
+            background: var(--fanatics-black);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 1px;
+            color: var(--fanatics-red);
+        }
+
+        .data-table tr:hover td {
+            background: var(--fanatics-light-gray);
+        }
+
+        .data-table .rank {
+            color: var(--fanatics-red);
+            font-weight: 700;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+            font-size: 0.85rem;
+            border-top: 1px solid var(--fanatics-light-gray);
+            margin-top: 2rem;
+        }
+
+        .footer a {
+            color: var(--fanatics-red);
+            text-decoration: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 1rem;
+                text-align: center;
+            }
+            .header-stats {
+                justify-content: center;
+            }
+            .cards-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">F</div>
+                <div class="logo-text">
+                    <h1>FanGraph Insights</h1>
+                    <span>Interactive Analytics Dashboard</span>
+                </div>
+            </div>
+            <div class="header-stats">
+                <div class="header-stat">
+                    <div class="header-stat-value">102.6M</div>
+                    <div class="header-stat-label">Total Fans</div>
+                </div>
+                <div class="header-stat">
+                    <div class="header-stat-value">$4.7B</div>
+                    <div class="header-stat-label">Revenue (24mo)</div>
+                </div>
+                <div class="header-stat">
+                    <div class="header-stat-value">9</div>
+                    <div class="header-stat-label">OpCos</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <nav class="nav">
+        <div class="nav-content">
+            <button class="nav-btn active" onclick="showSection('overview')">📊 Overview</button>
+            <button class="nav-btn" onclick="showSection('opco')">🏢 OpCo Breakdown</button>
+            <button class="nav-btn" onclick="showSection('commerce')">💰 Commerce Trends</button>
+            <button class="nav-btn" onclick="showSection('nfl')">🏈 NFL Teams</button>
+            <button class="nav-btn" onclick="showSection('demographics')">👥 Demographics</button>
+            <button class="nav-btn" onclick="showSection('leagues')">🏆 League Preferences</button>
+        </div>
+    </nav>
+
+    <main class="main">
+        <!-- Overview Section -->
+        <section id="overview" class="section active">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <span class="section-title-icon">📊</span>
+                    Executive Overview
+                </h2>
+                <p class="section-subtitle">High-level insights from the FanGraph Agent across 5 key analytical dimensions</p>
+            </div>
+
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-value">102.6M</div>
+                    <div class="card-label">Total Fans in FanGraph</div>
+                    <div class="card-change positive">↑ Active & accessible accounts</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">97.1M</div>
+                    <div class="card-label">Commerce Fans</div>
+                    <div class="card-change positive">94.6% of total fan base</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">32.6M</div>
+                    <div class="card-label">NFL Preference Fans</div>
+                    <div class="card-change positive">Top league by fan count</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">$492.8M</div>
+                    <div class="card-label">Peak Monthly Revenue</div>
+                    <div class="card-change positive">November 2025</div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">📈 Key Metrics at a Glance</div>
+                <div id="overview-chart" style="height: 400px;"></div>
+            </div>
+
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <div class="insight-title">🎯 Commerce Dominance</div>
+                    <div class="insight-text">Commerce fans represent 94.6% of the total fan base, indicating strong e-commerce engagement across the Fanatics ecosystem.</div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-title">🏈 NFL Leads Preferences</div>
+                    <div class="insight-text">NFL is the most preferred league with 32.6M fans, followed by MLB (21.9M) and NBA (15.8M).</div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-title">📅 Seasonal Peaks</div>
+                    <div class="insight-text">November-December shows 2-3x revenue compared to other months, driven by holiday shopping and NFL season.</div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-title">🌎 Geographic Concentration</div>
+                    <div class="insight-text">California leads with 10.9M fans, followed by Texas (8.3M) and Florida (6.7M) - representing 25% of US fans.</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- OpCo Breakdown Section -->
+        <section id="opco" class="section">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <span class="section-title-icon">🏢</span>
+                    Fan Count by Operating Company
+                </h2>
+                <p class="section-subtitle">Distribution of fans across Fanatics business units</p>
+            </div>
+
+            <div class="prompt-box">
+                <div class="prompt-label">FanGraph Agent Prompt</div>
+                <div class="prompt-text">"What is total number of fans in fangraph, and what's the breakdown by each OpCo?"</div>
+            </div>
+
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-value">97.1M</div>
+                    <div class="card-label">Commerce Fans</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">3.7M</div>
+                    <div class="card-label">FBG (Betting) Fans</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">2.9M</div>
+                    <div class="card-label">Topps Digital Fans</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">2.0M</div>
+                    <div class="card-label">FanApp Fans</div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">📊 Fan Distribution by OpCo</div>
+                <div id="opco-chart" style="height: 500px;"></div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">🥧 OpCo Market Share (Excluding Commerce)</div>
+                <div id="opco-pie" style="height: 400px;"></div>
+            </div>
+
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <div class="insight-title">💡 Key Insight</div>
+                    <div class="insight-text">Commerce dominates with 94.6% of fans. The emerging OpCos (FBG, Topps Digital, FanApp) represent significant growth opportunities with 8.5M combined fans.</div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-title">📈 Growth Opportunity</div>
+                    <div class="insight-text">Events has the smallest footprint at 56K fans - representing untapped potential for live experience monetization.</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Commerce Trends Section -->
+        <section id="commerce" class="section">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <span class="section-title-icon">💰</span>
+                    Commerce Transaction Trends
+                </h2>
+                <p class="section-subtitle">24-month analysis of orders, revenue, and customer activity</p>
+            </div>
+
+            <div class="prompt-box">
+                <div class="prompt-label">FanGraph Agent Prompt</div>
+                <div class="prompt-text">"Commerce transactions over the last 12 months compared to previous 12 months, showing product trends and sales changes"</div>
+            </div>
+
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-value">$4.7B</div>
+                    <div class="card-label">Total Revenue (24mo)</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">59.9M</div>
+                    <div class="card-label">Total Orders</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">$78.52</div>
+                    <div class="card-label">Avg Order Value</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">+12.1%</div>
+                    <div class="card-label">YoY Revenue Growth</div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">📈 Monthly Revenue Trend</div>
+                <div id="commerce-revenue" style="height: 400px;"></div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">📦 Monthly Orders & Customers</div>
+                <div id="commerce-orders" style="height: 400px;"></div>
+            </div>
+
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <div class="insight-title">🎄 Holiday Spike</div>
+                    <div class="insight-text">November-December accounts for ~$900M+ in revenue, representing ~40% of annual sales concentrated in just 2 months.</div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-title">🏈 Sports Seasons Impact</div>
+                    <div class="insight-text">August-October shows consistent growth aligned with NFL/College Football kickoff, driving 50%+ increase vs summer months.</div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-title">📊 YoY Comparison</div>
+                    <div class="insight-text">2025 shows 12% higher revenue than 2024 for comparable months, indicating healthy business growth trajectory.</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- NFL Teams Section -->
+        <section id="nfl" class="section">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <span class="section-title-icon">🏈</span>
+                    NFL Team Fan Distribution
+                </h2>
+                <p class="section-subtitle">Top 15 NFL teams by fan preference count</p>
+            </div>
+
+            <div class="prompt-box">
+                <div class="prompt-label">FanGraph Agent Prompt</div>
+                <div class="prompt-text">"What's the trend of NFL fans purchasing jerseys over the last 4 years? Show top teams by fan count."</div>
+            </div>
+
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-value">2.16M</div>
+                    <div class="card-label">Philadelphia Eagles</div>
+                    <div class="card-change positive">#1 NFL Fan Base</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">1.97M</div>
+                    <div class="card-label">Dallas Cowboys</div>
+                    <div class="card-change">#2 NFL Fan Base</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">1.97M</div>
+                    <div class="card-label">Kansas City Chiefs</div>
+                    <div class="card-change positive">Super Bowl Champions</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">1.57M</div>
+                    <div class="card-label">San Francisco 49ers</div>
+                    <div class="card-change">#4 NFL Fan Base</div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">🏈 NFL Teams by Fan Count</div>
+                <div id="nfl-chart" style="height: 500px;"></div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">📊 Data Table: Top 15 NFL Teams</div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Team</th>
+                            <th>Fan Count</th>
+                            <th>% of NFL Fans</th>
+                        </tr>
+                    </thead>
+                    <tbody id="nfl-table-body">
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <div class="insight-title">🦅 Eagles Lead</div>
+                    <div class="insight-text">Philadelphia Eagles top the fan base with 2.16M fans, likely boosted by recent Super Bowl appearance and passionate regional following.</div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-title">⭐ Cowboys Nation</div>
+                    <div class="insight-text">Despite no recent championships, Dallas Cowboys maintain 1.97M fans, proving "America's Team" brand strength.</div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-title">🏆 Mahomes Effect</div>
+                    <div class="insight-text">Kansas City Chiefs at 1.97M fans reflects dynasty-building success with back-to-back Super Bowl wins.</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Demographics Section -->
+        <section id="demographics" class="section">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <span class="section-title-icon">👥</span>
+                    Fan Demographics
+                </h2>
+                <p class="section-subtitle">Age distribution and geographic analysis of the fan base</p>
+            </div>
+
+            <div class="prompt-box">
+                <div class="prompt-label">FanGraph Agent Prompt</div>
+                <div class="prompt-text">"Tell me about the demographic profile of fans - their age, location, and other characteristics"</div>
+            </div>
+
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-value">51-60</div>
+                    <div class="card-label">Largest Age Group</div>
+                    <div class="card-change">13.8M fans</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">CA</div>
+                    <div class="card-label">Top State</div>
+                    <div class="card-change">10.9M fans</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">69.2M</div>
+                    <div class="card-label">Fans with Age Data</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">25%</div>
+                    <div class="card-label">Top 3 States Share</div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">📊 Age Distribution</div>
+                <div id="age-chart" style="height: 400px;"></div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">🗺️ Top 20 States by Fan Count</div>
+                <div id="geo-chart" style="height: 500px;"></div>
+            </div>
+
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <div class="insight-title">👴 Mature Fan Base</div>
+                    <div class="insight-text">41-60 age range represents 27.7M fans (40% of those with age data), indicating strong purchasing power demographics.</div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-title">🌴 Coastal Concentration</div>
+                    <div class="insight-text">CA, TX, FL, NY account for 32M fans (31% of total), highlighting key markets for targeted campaigns.</div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-title">🎯 Youth Opportunity</div>
+                    <div class="insight-text">18-30 age group at only 7.2M fans represents growth opportunity for next-gen fan engagement strategies.</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- League Preferences Section -->
+        <section id="leagues" class="section">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <span class="section-title-icon">🏆</span>
+                    League Preference Analysis
+                </h2>
+                <p class="section-subtitle">Fan distribution across major sports leagues</p>
+            </div>
+
+            <div class="prompt-box">
+                <div class="prompt-label">FanGraph Agent Prompt</div>
+                <div class="prompt-text">"Yearly breakdown of fans by league preference for NBA, NFL, MLB, NHL and NCAA"</div>
+            </div>
+
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-value">32.6M</div>
+                    <div class="card-label">NFL Fans</div>
+                    <div class="card-change positive">#1 League</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">21.9M</div>
+                    <div class="card-label">MLB Fans</div>
+                    <div class="card-change">#2 League</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">15.8M</div>
+                    <div class="card-label">NBA Fans</div>
+                    <div class="card-change">#3 League</div>
+                </div>
+                <div class="card">
+                    <div class="card-value">12.9M</div>
+                    <div class="card-label">NCAA Fans</div>
+                    <div class="card-change">#4 League</div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">🏆 League Fan Distribution</div>
+                <div id="league-chart" style="height: 450px;"></div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">📊 League Comparison</div>
+                <div id="league-pie" style="height: 400px;"></div>
+            </div>
+
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <div class="insight-title">🏈 NFL Dominance</div>
+                    <div class="insight-text">NFL leads with 32.6M fans - 36% more than the next closest league (MLB), confirming football's dominance in American sports fandom.</div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-title">⚾ Baseball's Strong Base</div>
+                    <div class="insight-text">MLB at 21.9M fans shows America's pastime maintains strong appeal, especially valuable for 162-game merchandise opportunities.</div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-title">🏀 NBA Growth</div>
+                    <div class="insight-text">15.8M NBA fans represent significant opportunity given league's global growth and younger demographic appeal.</div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-title">🏒 NHL Niche</div>
+                    <div class="insight-text">8.1M NHL fans - while smallest of major leagues, represents passionate regional fan bases in key northern markets.</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>FanGraph Insights Dashboard | Data sourced from <strong>SNOWFLAKE_INTELLIGENCE.CONFIG.FANGRAPH</strong> Semantic View</p>
+        <p>Built with Plotly.js | © 2026 Fanatics | <a href="https://github.com/daniel-fox-fanatics/fangraph-insights">GitHub Repository</a></p>
+    </footer>
+
+    <script>
+        // Fanatics color palette
+        const colors = {
+            red: '#E31837',
+            darkRed: '#B71430',
+            black: '#1A1A1A',
+            gray: '#2D2D2D',
+            white: '#FFFFFF',
+            gold: '#FFD700',
+            blue: '#4A90D9',
+            green: '#28A745',
+            gradient: ['#E31837', '#FF6B6B', '#4A90D9', '#28A745', '#FFD700', '#9B59B6', '#3498DB', '#E67E22', '#1ABC9C']
+        };
+
+        const plotlyConfig = {
+            displayModeBar: true,
+            responsive: true,
+            displaylogo: false
+        };
+
+        const plotlyLayout = {
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { color: '#FFFFFF', family: 'Inter, sans-serif' },
+            margin: { t: 40, r: 40, b: 60, l: 80 }
+        };
+
+        // Navigation
+        function showSection(sectionId) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(sectionId).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // Data
+        const opcoData = {
+            categories: ['Commerce', 'FBG', 'Topps Digital', 'FanApp', 'Topps.com', 'Collect', 'Live', 'Events'],
+            values: [97141896, 3707853, 2877865, 1962247, 1712075, 560700, 533566, 56204]
+        };
+
+        const commerceData = {
+            months: ['Feb 24','Mar 24','Apr 24','May 24','Jun 24','Jul 24','Aug 24','Sep 24','Oct 24','Nov 24','Dec 24','Jan 25','Feb 25','Mar 25','Apr 25','May 25','Jun 25','Jul 25','Aug 25','Sep 25','Oct 25','Nov 25','Dec 25'],
+            revenue: [129.1,145.5,154.4,141.6,172.4,145.5,217.9,265.6,305.9,439.9,476.1,175.8,187.9,157.5,153.8,159.0,161.2,158.0,226.3,273.4,281.3,492.8,374.3],
+            orders: [1.61,1.95,1.94,1.83,2.31,1.88,2.80,3.23,3.47,5.15,5.92,1.96,2.04,1.96,1.85,1.96,2.04,1.92,2.63,2.87,3.11,5.40,4.47],
+            customers: [1.39,1.66,1.67,1.59,1.99,1.62,2.37,2.70,2.86,4.24,4.95,1.69,1.70,1.66,1.58,1.68,1.75,1.62,2.22,2.41,2.59,4.42,3.81]
+        };
+
+        const nflData = {
+            teams: ['Philadelphia Eagles','Dallas Cowboys','Kansas City Chiefs','San Francisco 49ers','Pittsburgh Steelers','Buffalo Bills','Green Bay Packers','Detroit Lions','Chicago Bears','New England Patriots','Las Vegas Raiders','Tampa Bay Buccaneers','Seattle Seahawks','Cincinnati Bengals','Minnesota Vikings'],
+            fans: [2157193,1971220,1966405,1572022,1309225,1184499,1159080,1146292,1140681,1066427,978420,933848,860148,839871,832092]
+        };
+
+        const ageData = {
+            ranges: ['51-60','41-50','61-70','31-40','71-80','21-30','80+','18-20'],
+            counts: [13847119,13824619,12258421,11297264,7482298,6852085,3374478,301369]
+        };
+
+        const geoData = {
+            states: ['CA','TX','FL','NY','PA','IL','OH','MI','NC','NJ','GA','VA','AZ','WA','MA','TN','MD','IN','CO','MO'],
+            fans: [10902084,8309208,6651658,6174825,4536557,4055358,3972583,3366423,3253670,3195383,3194039,2855004,2252510,2186514,2181561,2130923,2119616,2112991,1987106,1966599]
+        };
+
+        const leagueData = {
+            leagues: ['NFL','MLB','NBA','NCAA','NHL'],
+            fans: [32565532,21863984,15787201,12877717,8066149]
+        };
+
+        // Overview Chart
+        Plotly.newPlot('overview-chart', [{
+            type: 'indicator',
+            mode: 'number+gauge+delta',
+            value: 102.6,
+            title: { text: 'Total Fans (M)', font: { color: '#fff' } },
+            gauge: {
+                axis: { range: [0, 150], tickcolor: '#fff' },
+                bar: { color: colors.red },
+                bgcolor: colors.gray,
+                bordercolor: '#404040',
+                steps: [
+                    { range: [0, 50], color: '#1a1a1a' },
+                    { range: [50, 100], color: '#2d2d2d' },
+                    { range: [100, 150], color: '#404040' }
+                ]
+            },
+            domain: { x: [0, 0.3], y: [0, 1] }
+        }, {
+            type: 'indicator',
+            mode: 'number+gauge',
+            value: 4.7,
+            title: { text: 'Revenue (B$)', font: { color: '#fff' } },
+            gauge: {
+                axis: { range: [0, 6], tickcolor: '#fff' },
+                bar: { color: colors.gold },
+                bgcolor: colors.gray,
+                bordercolor: '#404040'
+            },
+            domain: { x: [0.35, 0.65], y: [0, 1] }
+        }, {
+            type: 'indicator',
+            mode: 'number+gauge',
+            value: 32.6,
+            title: { text: 'NFL Fans (M)', font: { color: '#fff' } },
+            gauge: {
+                axis: { range: [0, 40], tickcolor: '#fff' },
+                bar: { color: colors.green },
+                bgcolor: colors.gray,
+                bordercolor: '#404040'
+            },
+            domain: { x: [0.7, 1], y: [0, 1] }
+        }], {...plotlyLayout, height: 400}, plotlyConfig);
+
+        // OpCo Bar Chart
+        Plotly.newPlot('opco-chart', [{
+            type: 'bar',
+            x: opcoData.values,
+            y: opcoData.categories,
+            orientation: 'h',
+            marker: {
+                color: colors.gradient,
+                line: { color: colors.white, width: 1 }
+            },
+            text: opcoData.values.map(v => (v/1000000).toFixed(1) + 'M'),
+            textposition: 'outside',
+            textfont: { color: '#fff' }
+        }], {
+            ...plotlyLayout,
+            xaxis: { title: 'Fan Count', gridcolor: '#404040', tickformat: '.2s' },
+            yaxis: { automargin: true }
+        }, plotlyConfig);
+
+        // OpCo Pie (excluding Commerce)
+        const opcoNonCommerce = opcoData.categories.slice(1);
+        const opcoNonCommerceVals = opcoData.values.slice(1);
+        Plotly.newPlot('opco-pie', [{
+            type: 'pie',
+            labels: opcoNonCommerce,
+            values: opcoNonCommerceVals,
+            marker: { colors: colors.gradient.slice(1) },
+            textinfo: 'label+percent',
+            textfont: { color: '#fff' },
+            hole: 0.4
+        }], {...plotlyLayout}, plotlyConfig);
+
+        // Commerce Revenue Chart
+        Plotly.newPlot('commerce-revenue', [{
+            type: 'scatter',
+            mode: 'lines+markers',
+            x: commerceData.months,
+            y: commerceData.revenue,
+            name: 'Revenue ($M)',
+            line: { color: colors.red, width: 3 },
+            marker: { size: 8, color: colors.red },
+            fill: 'tozeroy',
+            fillcolor: 'rgba(227,24,55,0.2)'
+        }], {
+            ...plotlyLayout,
+            xaxis: { title: 'Month', gridcolor: '#404040', tickangle: -45 },
+            yaxis: { title: 'Revenue ($ Millions)', gridcolor: '#404040' },
+            showlegend: false
+        }, plotlyConfig);
+
+        // Commerce Orders Chart
+        Plotly.newPlot('commerce-orders', [{
+            type: 'bar',
+            x: commerceData.months,
+            y: commerceData.orders,
+            name: 'Orders (M)',
+            marker: { color: colors.blue }
+        }, {
+            type: 'scatter',
+            mode: 'lines+markers',
+            x: commerceData.months,
+            y: commerceData.customers,
+            name: 'Customers (M)',
+            yaxis: 'y2',
+            line: { color: colors.gold, width: 2 },
+            marker: { size: 6 }
+        }], {
+            ...plotlyLayout,
+            xaxis: { title: 'Month', gridcolor: '#404040', tickangle: -45 },
+            yaxis: { title: 'Orders (Millions)', gridcolor: '#404040', side: 'left' },
+            yaxis2: { title: 'Customers (Millions)', overlaying: 'y', side: 'right', gridcolor: '#404040' },
+            legend: { x: 0, y: 1.1, orientation: 'h' },
+            barmode: 'group'
+        }, plotlyConfig);
+
+        // NFL Teams Chart
+        Plotly.newPlot('nfl-chart', [{
+            type: 'bar',
+            x: nflData.teams,
+            y: nflData.fans,
+            marker: {
+                color: nflData.fans.map((v, i) => i === 0 ? colors.green : (i < 3 ? colors.red : colors.blue)),
+                line: { width: 1, color: '#fff' }
+            },
+            text: nflData.fans.map(v => (v/1000000).toFixed(2) + 'M'),
+            textposition: 'outside',
+            textfont: { color: '#fff', size: 10 }
+        }], {
+            ...plotlyLayout,
+            xaxis: { title: 'NFL Team', tickangle: -45, automargin: true },
+            yaxis: { title: 'Fan Count', gridcolor: '#404040' }
+        }, plotlyConfig);
+
+        // NFL Table
+        const nflTableBody = document.getElementById('nfl-table-body');
+        const totalNFLFans = 32565532;
+        nflData.teams.forEach((team, i) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="rank">#${i+1}</td>
+                <td>${team.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</td>
+                <td>${(nflData.fans[i]/1000000).toFixed(2)}M</td>
+                <td>${((nflData.fans[i]/totalNFLFans)*100).toFixed(1)}%</td>
+            `;
+            nflTableBody.appendChild(row);
+        });
+
+        // Age Chart
+        Plotly.newPlot('age-chart', [{
+            type: 'bar',
+            x: ageData.ranges,
+            y: ageData.counts,
+            marker: {
+                color: ageData.ranges.map((r, i) => colors.gradient[i % colors.gradient.length])
+            },
+            text: ageData.counts.map(v => (v/1000000).toFixed(1) + 'M'),
+            textposition: 'outside',
+            textfont: { color: '#fff' }
+        }], {
+            ...plotlyLayout,
+            xaxis: { title: 'Age Range', categoryorder: 'total descending' },
+            yaxis: { title: 'Fan Count', gridcolor: '#404040' }
+        }, plotlyConfig);
+
+        // Geo Chart
+        Plotly.newPlot('geo-chart', [{
+            type: 'bar',
+            x: geoData.states,
+            y: geoData.fans,
+            marker: {
+                color: geoData.fans,
+                colorscale: [[0, '#404040'], [0.5, colors.red], [1, colors.gold]],
+                line: { width: 1, color: '#fff' }
+            },
+            text: geoData.fans.map(v => (v/1000000).toFixed(1) + 'M'),
+            textposition: 'outside',
+            textfont: { color: '#fff', size: 9 }
+        }], {
+            ...plotlyLayout,
+            xaxis: { title: 'State' },
+            yaxis: { title: 'Fan Count', gridcolor: '#404040' }
+        }, plotlyConfig);
+
+        // League Bar Chart
+        Plotly.newPlot('league-chart', [{
+            type: 'bar',
+            x: leagueData.leagues,
+            y: leagueData.fans,
+            marker: {
+                color: [colors.red, colors.blue, '#FF6B00', colors.gold, '#00D4FF'],
+                line: { width: 2, color: '#fff' }
+            },
+            text: leagueData.fans.map(v => (v/1000000).toFixed(1) + 'M'),
+            textposition: 'outside',
+            textfont: { color: '#fff', size: 14, family: 'Inter' }
+        }], {
+            ...plotlyLayout,
+            xaxis: { title: 'League' },
+            yaxis: { title: 'Fan Count', gridcolor: '#404040' }
+        }, plotlyConfig);
+
+        // League Pie
+        Plotly.newPlot('league-pie', [{
+            type: 'pie',
+            labels: leagueData.leagues,
+            values: leagueData.fans,
+            marker: { colors: [colors.red, colors.blue, '#FF6B00', colors.gold, '#00D4FF'] },
+            textinfo: 'label+percent',
+            textfont: { color: '#fff', size: 14 },
+            hole: 0.35
+        }], {...plotlyLayout}, plotlyConfig);
+
+        console.log('FanGraph Insights Dashboard loaded successfully!');
+    </script>
+</body>
+</html>

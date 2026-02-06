@@ -334,67 +334,85 @@ def get_geo_data():
     return df
 
 @st.cache_data(ttl=3600, show_spinner="Fetching revenue data...")
-def get_total_revenue(opco: str = "ALL"):
-    """Get total revenue from FanGraph by OpCo"""
+def get_revenue_by_year(opco: str = "ALL"):
+    """Get gross revenue by year (2024 and 2025) from transaction-level data by OpCo"""
     
-    # Revenue columns by OpCo
-    revenue_mappings = {
-        "ALL": """
-            COALESCE(COMMERCE_ORDER_AMOUNT_TOTAL, 0)
-            + COALESCE(FBG_TRANSACTION_TOTAL, 0)
-            + COALESCE(LIVE_TOTAL_REVENUE, 0)
-            + COALESCE(EVENTS_ORDER_AMOUNT_TOTAL, 0)
-            + COALESCE(FANAPP_COMMERCE_ORDER_AMOUNT_TOTAL, 0)
-            + COALESCE(TOPPS_COM_NET_TOTAL, 0)
-            + COALESCE(TOPPS_DIGITAL_BASEBALL_SPEND_AMOUNT_LIFETIME, 0)
-            + COALESCE(TOPPS_DIGITAL_DISNEY_SPEND_AMOUNT_LIFETIME, 0)
-            + COALESCE(TOPPS_DIGITAL_MARVEL_SPEND_AMOUNT_LIFETIME, 0)
-            + COALESCE(TOPPS_DIGITAL_STARWARS_SPEND_AMOUNT_LIFETIME, 0)
-            + COALESCE(TOPPS_DIGITAL_WWE_SPEND_AMOUNT_LIFETIME, 0)
+    # OpCo-specific queries using transaction tables
+    opco_queries = {
+        "Commerce": """
+            SELECT YEAR(ORDER_TS) as YEAR, SUM(GROSS_DEMAND) as REVENUE
+            FROM FANGRAPH.COMMERCE.DIM_COMMERCE_PURCHASE 
+            WHERE YEAR(ORDER_TS) IN (2024, 2025) 
+            GROUP BY YEAR(ORDER_TS)
         """,
-        "Commerce": "COALESCE(COMMERCE_ORDER_AMOUNT_TOTAL, 0)",
-        "FBG (Sportsbook)": "COALESCE(FBG_TRANSACTION_TOTAL, 0)",
-        "Live": "COALESCE(LIVE_TOTAL_REVENUE, 0)",
-        "Events": "COALESCE(EVENTS_ORDER_AMOUNT_TOTAL, 0)",
-        "FanApp": "COALESCE(FANAPP_COMMERCE_ORDER_AMOUNT_TOTAL, 0)",
-        "Topps.com": "COALESCE(TOPPS_COM_NET_TOTAL, 0)",
-        "Topps Digital": """
-            COALESCE(TOPPS_DIGITAL_BASEBALL_SPEND_AMOUNT_LIFETIME, 0)
-            + COALESCE(TOPPS_DIGITAL_DISNEY_SPEND_AMOUNT_LIFETIME, 0)
-            + COALESCE(TOPPS_DIGITAL_MARVEL_SPEND_AMOUNT_LIFETIME, 0)
-            + COALESCE(TOPPS_DIGITAL_STARWARS_SPEND_AMOUNT_LIFETIME, 0)
-            + COALESCE(TOPPS_DIGITAL_WWE_SPEND_AMOUNT_LIFETIME, 0)
+        "FBG (Sportsbook)": """
+            SELECT YEAR(WAGER_PLACED_TIME_UTC) as YEAR, SUM(TOTAL_STAKE_BY_WAGER) as REVENUE
+            FROM FANGRAPH.FBG.DIM_FBG_PURCHASE 
+            WHERE YEAR(WAGER_PLACED_TIME_UTC) IN (2024, 2025) 
+            GROUP BY YEAR(WAGER_PLACED_TIME_UTC)
         """,
-        "Collect": "0"  # No revenue column for Collect
+        "Live": """
+            SELECT YEAR(ORDER_PST_TS) as YEAR, SUM(REVENUE) as REVENUE
+            FROM FANGRAPH.LIVE.ORDERS 
+            WHERE YEAR(ORDER_PST_TS) IN (2024, 2025) 
+            GROUP BY YEAR(ORDER_PST_TS)
+        """,
+        "Events": """
+            SELECT YEAR(ORDER_COMPLETED_TIME) as YEAR, SUM(ORDER_TOTAL_PAID) as REVENUE
+            FROM FANGRAPH.EVENTS.DIM_EVENTS_PURCHASE 
+            WHERE YEAR(ORDER_COMPLETED_TIME) IN (2024, 2025) 
+            GROUP BY YEAR(ORDER_COMPLETED_TIME)
+        """,
+        "Topps.com": """
+            SELECT YEAR(ORDER_TS) as YEAR, SUM(P_GMV_USD) as REVENUE
+            FROM FANGRAPH.TOPPS.DIM_TOPPS_PURCHASE 
+            WHERE YEAR(ORDER_TS) IN (2024, 2025) 
+            GROUP BY YEAR(ORDER_TS)
+        """
     }
     
-    revenue_calc = revenue_mappings.get(opco, revenue_mappings["ALL"])
-    
-    # Filter clause for OpCo
     if opco == "ALL":
-        filter_clause = "1=1"
+        # Combine all OpCos
+        query = """
+            SELECT YEAR, SUM(REVENUE) as REVENUE FROM (
+                -- Commerce
+                SELECT YEAR(ORDER_TS) as YEAR, SUM(GROSS_DEMAND) as REVENUE
+                FROM FANGRAPH.COMMERCE.DIM_COMMERCE_PURCHASE WHERE YEAR(ORDER_TS) IN (2024, 2025) GROUP BY YEAR(ORDER_TS)
+                UNION ALL
+                -- FBG (Sportsbook)
+                SELECT YEAR(WAGER_PLACED_TIME_UTC) as YEAR, SUM(TOTAL_STAKE_BY_WAGER) as REVENUE
+                FROM FANGRAPH.FBG.DIM_FBG_PURCHASE WHERE YEAR(WAGER_PLACED_TIME_UTC) IN (2024, 2025) GROUP BY YEAR(WAGER_PLACED_TIME_UTC)
+                UNION ALL
+                -- Live
+                SELECT YEAR(ORDER_PST_TS) as YEAR, SUM(REVENUE) as REVENUE
+                FROM FANGRAPH.LIVE.ORDERS WHERE YEAR(ORDER_PST_TS) IN (2024, 2025) GROUP BY YEAR(ORDER_PST_TS)
+                UNION ALL
+                -- Events
+                SELECT YEAR(ORDER_COMPLETED_TIME) as YEAR, SUM(ORDER_TOTAL_PAID) as REVENUE
+                FROM FANGRAPH.EVENTS.DIM_EVENTS_PURCHASE WHERE YEAR(ORDER_COMPLETED_TIME) IN (2024, 2025) GROUP BY YEAR(ORDER_COMPLETED_TIME)
+                UNION ALL
+                -- Topps.com
+                SELECT YEAR(ORDER_TS) as YEAR, SUM(P_GMV_USD) as REVENUE
+                FROM FANGRAPH.TOPPS.DIM_TOPPS_PURCHASE WHERE YEAR(ORDER_TS) IN (2024, 2025) GROUP BY YEAR(ORDER_TS)
+            )
+            GROUP BY YEAR
+            ORDER BY YEAR
+        """
+    elif opco in opco_queries:
+        query = opco_queries[opco]
     else:
-        opco_filters = {
-            "Commerce": "COMMERCE_FAN_INDICATOR = TRUE",
-            "Topps Digital": "TOPPS_DIGITAL_FAN_INDICATOR = TRUE",
-            "Topps.com": "TOPPS_COM_FAN_INDICATOR = TRUE",
-            "FBG (Sportsbook)": "FBG_FAN_INDICATOR = TRUE",
-            "FanApp": "FANAPP_FAN_INDICATOR = TRUE",
-            "Live": "LIVE_FAN_INDICATOR = TRUE",
-            "Collect": "COLLECT_FAN_INDICATOR = TRUE",
-            "Events": "EVENTS_FAN_INDICATOR = TRUE"
-        }
-        filter_clause = opco_filters.get(opco, "1=1")
-    
-    query = f"""
-    SELECT SUM({revenue_calc}) as TOTAL_REVENUE
-    FROM FANGRAPH.ADMIN.FANGRAPH
-    WHERE {filter_clause}
-    """
+        # OpCos without transaction-level data (FanApp, Topps Digital, Collect)
+        return {'2024': 0.0, '2025': 0.0}
     
     result = run_query(query)
-    revenue = result['TOTAL_REVENUE'].iloc[0]
-    return float(revenue) if revenue is not None else 0.0
+    
+    # Convert to dict by year
+    revenue_by_year = {'2024': 0.0, '2025': 0.0}
+    for _, row in result.iterrows():
+        year = str(int(row['YEAR']))
+        revenue_by_year[year] = float(row['REVENUE']) if row['REVENUE'] is not None else 0.0
+    
+    return revenue_by_year
 
 # ============== OPCO-FILTERED QUERIES ==============
 @st.cache_data(ttl=3600, show_spinner="Fetching filtered data...")
@@ -620,10 +638,10 @@ def main():
             commerce_df = get_commerce_trends()  # Commerce data doesn't filter by OpCo
         
         nfl_fans = leagues_df[leagues_df['LEAGUE'] == 'NFL']['FAN_COUNT'].values[0] if len(leagues_df) > 0 else 0
-        total_revenue = get_total_revenue(selected_opco)
+        revenue_by_year = get_revenue_by_year(selected_opco)
         
-        # KPI Cards
-        col1, col2, col3, col4 = st.columns(4)
+        # KPI Cards - 5 columns for 2 revenue metrics
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.metric("Total Fans", format_number(total_fans), delta=f"{'Filtered: ' + selected_opco if selected_opco != 'ALL' else 'All OpCos'}")
         with col2:
@@ -635,7 +653,9 @@ def main():
             st.metric("NFL Preference Fans", format_number(nfl_fans), delta="Top League")
         with col4:
             revenue_label = "All OpCos" if selected_opco == "ALL" else selected_opco
-            st.metric("Total Revenue", format_number(total_revenue, '$'), delta=revenue_label)
+            st.metric("2025 Gross Revenue", format_number(revenue_by_year['2025'], '$'), delta=revenue_label)
+        with col5:
+            st.metric("2024 Gross Revenue", format_number(revenue_by_year['2024'], '$'), delta=revenue_label)
         
         st.divider()
         

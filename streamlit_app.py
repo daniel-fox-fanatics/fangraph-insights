@@ -351,12 +351,6 @@ def get_revenue_by_year(opco: str = "ALL"):
             WHERE YEAR(WAGER_PLACED_TIME_UTC) IN (2024, 2025) 
             GROUP BY YEAR(WAGER_PLACED_TIME_UTC)
         """,
-        "Live": """
-            SELECT YEAR(ORDER_PST_TS) as YEAR, SUM(REVENUE) as REVENUE
-            FROM FANGRAPH.LIVE.ORDERS 
-            WHERE YEAR(ORDER_PST_TS) IN (2024, 2025) 
-            GROUP BY YEAR(ORDER_PST_TS)
-        """,
         "Events": """
             SELECT YEAR(ORDER_COMPLETED_TIME) as YEAR, SUM(ORDER_TOTAL_PAID) as REVENUE
             FROM FANGRAPH.EVENTS.DIM_EVENTS_PURCHASE 
@@ -372,7 +366,7 @@ def get_revenue_by_year(opco: str = "ALL"):
     }
     
     if opco == "ALL":
-        # Combine all OpCos
+        # Combine all OpCos (excluding LIVE schema - no access)
         query = """
             SELECT YEAR, SUM(REVENUE) as REVENUE FROM (
                 -- Commerce
@@ -382,10 +376,6 @@ def get_revenue_by_year(opco: str = "ALL"):
                 -- FBG (Sportsbook)
                 SELECT YEAR(WAGER_PLACED_TIME_UTC) as YEAR, SUM(TOTAL_STAKE_BY_WAGER) as REVENUE
                 FROM FANGRAPH.FBG.DIM_FBG_PURCHASE WHERE YEAR(WAGER_PLACED_TIME_UTC) IN (2024, 2025) GROUP BY YEAR(WAGER_PLACED_TIME_UTC)
-                UNION ALL
-                -- Live
-                SELECT YEAR(ORDER_PST_TS) as YEAR, SUM(REVENUE) as REVENUE
-                FROM FANGRAPH.LIVE.ORDERS WHERE YEAR(ORDER_PST_TS) IN (2024, 2025) GROUP BY YEAR(ORDER_PST_TS)
                 UNION ALL
                 -- Events
                 SELECT YEAR(ORDER_COMPLETED_TIME) as YEAR, SUM(ORDER_TOTAL_PAID) as REVENUE
@@ -401,7 +391,7 @@ def get_revenue_by_year(opco: str = "ALL"):
     elif opco in opco_queries:
         query = opco_queries[opco]
     else:
-        # OpCos without transaction-level data (FanApp, Topps Digital, Collect)
+        # OpCos without transaction-level data (FanApp, Topps Digital, Collect, Live)
         return {'2024': 0.0, '2025': 0.0}
     
     result = run_query(query)

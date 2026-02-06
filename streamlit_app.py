@@ -193,6 +193,7 @@ PLOTLY_LAYOUT = dict(
 )
 
 # ============== SNOWFLAKE CONNECTION ==============
+@st.cache_resource
 def get_connection():
     """Get Snowflake connection - works both in SiS and locally"""
     return st.connection("snowflake")
@@ -200,7 +201,7 @@ def get_connection():
 def run_query(query):
     """Execute query and return pandas DataFrame"""
     conn = get_connection()
-    return conn.query(query, ttl=600)  # Cache for 10 minutes
+    return conn.query(query)
 
 # ============== DATA QUERIES ==============
 @st.cache_data(ttl=3600, show_spinner="Fetching data from Snowflake...")
@@ -507,7 +508,7 @@ def main():
     
     # Refresh button in sidebar
     with st.sidebar:
-        st.image("fanatics-logo.png", width=150)
+        st.markdown("### FanGraph Insights")
         st.markdown("---")
         if st.button("🔄 Refresh Data", type="primary", use_container_width=True):
             clear_cache()
@@ -762,10 +763,15 @@ def main():
         commerce_df = get_commerce_trends()
         
         # KPIs
+        # Convert numeric columns to float (Snowflake returns Decimal)
+        commerce_df['REVENUE'] = pd.to_numeric(commerce_df['REVENUE'], errors='coerce')
+        commerce_df['ORDERS'] = pd.to_numeric(commerce_df['ORDERS'], errors='coerce')
+        commerce_df['CUSTOMERS'] = pd.to_numeric(commerce_df['CUSTOMERS'], errors='coerce')
+        
         total_revenue = commerce_df['REVENUE'].sum()
         total_orders = commerce_df['ORDERS'].sum()
         avg_order_value = total_revenue / total_orders if total_orders > 0 else 0
-        peak_month = commerce_df.loc[commerce_df['REVENUE'].idxmax(), 'MONTH'].strftime('%b %Y')
+        peak_month = commerce_df.loc[commerce_df['REVENUE'].idxmax(), 'MONTH'].strftime('%b %Y') if len(commerce_df) > 0 else "N/A"
         
         col1, col2, col3, col4 = st.columns(4)
         with col1:

@@ -335,7 +335,8 @@ def get_geo_data():
 
 @st.cache_data(ttl=3600, show_spinner="Fetching revenue data...")
 def get_revenue_by_year(opco: str = "ALL"):
-    """Get gross revenue by year (2024 and 2025) from transaction-level data by OpCo"""
+    """Get gross revenue by year (2024 and 2025) from transaction-level data by OpCo.
+    For OpCos without transaction tables, uses FANGRAPH lifetime columns."""
     
     # OpCo-specific queries using transaction tables
     opco_queries = {
@@ -365,33 +366,90 @@ def get_revenue_by_year(opco: str = "ALL"):
         """
     }
     
+    # OpCos that use FANGRAPH lifetime columns (no transaction tables)
+    fangraph_revenue_columns = {
+        "Live": "COALESCE(LIVE_TOTAL_REVENUE, 0)",
+        "FanApp": "COALESCE(FANAPP_COMMERCE_ORDER_AMOUNT_TOTAL, 0)",
+        "Topps Digital": """
+            COALESCE(TOPPS_DIGITAL_BASEBALL_SPEND_AMOUNT_LIFETIME, 0)
+            + COALESCE(TOPPS_DIGITAL_DISNEY_SPEND_AMOUNT_LIFETIME, 0)
+            + COALESCE(TOPPS_DIGITAL_MARVEL_SPEND_AMOUNT_LIFETIME, 0)
+            + COALESCE(TOPPS_DIGITAL_STARWARS_SPEND_AMOUNT_LIFETIME, 0)
+            + COALESCE(TOPPS_DIGITAL_WWE_SPEND_AMOUNT_LIFETIME, 0)
+        """,
+        "Collect": "COALESCE(COLLECT_REVENUE_LIFETIME, 0)"
+    }
+    
+    opco_filters = {
+        "Live": "LIVE_FAN_INDICATOR = TRUE",
+        "FanApp": "FANAPP_FAN_INDICATOR = TRUE",
+        "Topps Digital": "TOPPS_DIGITAL_FAN_INDICATOR = TRUE",
+        "Collect": "COLLECT_FAN_INDICATOR = TRUE"
+    }
+    
     if opco == "ALL":
-        # Combine all OpCos (excluding LIVE schema - no access)
+        # Combine transaction-level data + FANGRAPH lifetime data for other OpCos
         query = """
             SELECT YEAR, SUM(REVENUE) as REVENUE FROM (
-                -- Commerce
+                -- Commerce (transaction-level)
                 SELECT YEAR(ORDER_TS) as YEAR, SUM(GROSS_DEMAND) as REVENUE
                 FROM FANGRAPH.COMMERCE.DIM_COMMERCE_PURCHASE WHERE YEAR(ORDER_TS) IN (2024, 2025) GROUP BY YEAR(ORDER_TS)
                 UNION ALL
-                -- FBG (Sportsbook)
+                -- FBG (transaction-level)
                 SELECT YEAR(WAGER_PLACED_TIME_UTC) as YEAR, SUM(TOTAL_STAKE_BY_WAGER) as REVENUE
                 FROM FANGRAPH.FBG.DIM_FBG_PURCHASE WHERE YEAR(WAGER_PLACED_TIME_UTC) IN (2024, 2025) GROUP BY YEAR(WAGER_PLACED_TIME_UTC)
                 UNION ALL
-                -- Events
+                -- Events (transaction-level)
                 SELECT YEAR(ORDER_COMPLETED_TIME) as YEAR, SUM(ORDER_TOTAL_PAID) as REVENUE
                 FROM FANGRAPH.EVENTS.DIM_EVENTS_PURCHASE WHERE YEAR(ORDER_COMPLETED_TIME) IN (2024, 2025) GROUP BY YEAR(ORDER_COMPLETED_TIME)
                 UNION ALL
-                -- Topps.com
+                -- Topps.com (transaction-level)
                 SELECT YEAR(ORDER_TS) as YEAR, SUM(P_GMV_USD) as REVENUE
                 FROM FANGRAPH.TOPPS.DIM_TOPPS_PURCHASE WHERE YEAR(ORDER_TS) IN (2024, 2025) GROUP BY YEAR(ORDER_TS)
+                UNION ALL
+                -- Live, FanApp, Topps Digital, Collect (FANGRAPH lifetime - split 50/50 between years)
+                SELECT 2024 as YEAR, SUM(
+                    COALESCE(LIVE_TOTAL_REVENUE, 0)
+                    + COALESCE(FANAPP_COMMERCE_ORDER_AMOUNT_TOTAL, 0)
+                    + COALESCE(TOPPS_DIGITAL_BASEBALL_SPEND_AMOUNT_LIFETIME, 0)
+                    + COALESCE(TOPPS_DIGITAL_DISNEY_SPEND_AMOUNT_LIFETIME, 0)
+                    + COALESCE(TOPPS_DIGITAL_MARVEL_SPEND_AMOUNT_LIFETIME, 0)
+                    + COALESCE(TOPPS_DIGITAL_STARWARS_SPEND_AMOUNT_LIFETIME, 0)
+                    + COALESCE(TOPPS_DIGITAL_WWE_SPEND_AMOUNT_LIFETIME, 0)
+                    + COALESCE(COLLECT_REVENUE_LIFETIME, 0)
+                ) / 2 as REVENUE
+                FROM FANGRAPH.ADMIN.FANGRAPH
+                UNION ALL
+                SELECT 2025 as YEAR, SUM(
+                    COALESCE(LIVE_TOTAL_REVENUE, 0)
+                    + COALESCE(FANAPP_COMMERCE_ORDER_AMOUNT_TOTAL, 0)
+                    + COALESCE(TOPPS_DIGITAL_BASEBALL_SPEND_AMOUNT_LIFETIME, 0)
+                    + COALESCE(TOPPS_DIGITAL_DISNEY_SPEND_AMOUNT_LIFETIME, 0)
+                    + COALESCE(TOPPS_DIGITAL_MARVEL_SPEND_AMOUNT_LIFETIME, 0)
+                    + COALESCE(TOPPS_DIGITAL_STARWARS_SPEND_AMOUNT_LIFETIME, 0)
+                    + COALESCE(TOPPS_DIGITAL_WWE_SPEND_AMOUNT_LIFETIME, 0)
+                    + COALESCE(COLLECT_REVENUE_LIFETIME, 0)
+                ) / 2 as REVENUE
+                FROM FANGRAPH.ADMIN.FANGRAPH
             )
             GROUP BY YEAR
             ORDER BY YEAR
         """
     elif opco in opco_queries:
+        # Use transaction-level query
         query = opco_queries[opco]
+    elif opco in fangraph_revenue_columns:
+        # Use FANGRAPH lifetime columns - split 50/50 between years as approximation
+        revenue_col = fangraph_revenue_columns[opco]
+        filter_clause = opco_filters[opco]
+        query = f"""
+            SELECT 2024 as YEAR, SUM({revenue_col}) / 2 as REVENUE
+            FROM FANGRAPH.ADMIN.FANGRAPH WHERE {filter_clause}
+            UNION ALL
+            SELECT 2025 as YEAR, SUM({revenue_col}) / 2 as REVENUE
+            FROM FANGRAPH.ADMIN.FANGRAPH WHERE {filter_clause}
+        """
     else:
-        # OpCos without transaction-level data (FanApp, Topps Digital, Collect, Live)
         return {'2024': 0.0, '2025': 0.0}
     
     result = run_query(query)

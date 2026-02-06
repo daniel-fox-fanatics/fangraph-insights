@@ -1,0 +1,6 @@
+definition_version: 1
+streamlit:
+  name: FANGRAPH_INSIGHTS_DASHBOARD
+  stage: SNOWFLAKE_INTELLIGENCE.STREAMLIT.FANGRAPH_STAGE
+  query_warehouse: FDE_DEVELOPER_3XL_WH
+  main_file: streamlit_app.py

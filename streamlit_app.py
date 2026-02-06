@@ -333,6 +333,69 @@ def get_geo_data():
     df = run_query(query)
     return df
 
+@st.cache_data(ttl=3600, show_spinner="Fetching revenue data...")
+def get_total_revenue(opco: str = "ALL"):
+    """Get total revenue from FanGraph by OpCo"""
+    
+    # Revenue columns by OpCo
+    revenue_mappings = {
+        "ALL": """
+            COALESCE(COMMERCE_ORDER_AMOUNT_TOTAL, 0)
+            + COALESCE(FBG_TRANSACTION_TOTAL, 0)
+            + COALESCE(LIVE_TOTAL_REVENUE, 0)
+            + COALESCE(EVENTS_ORDER_AMOUNT_TOTAL, 0)
+            + COALESCE(FANAPP_COMMERCE_ORDER_AMOUNT_TOTAL, 0)
+            + COALESCE(TOPPS_COM_NET_TOTAL, 0)
+            + COALESCE(TOPPS_DIGITAL_BASEBALL_SPEND_AMOUNT_LIFETIME, 0)
+            + COALESCE(TOPPS_DIGITAL_DISNEY_SPEND_AMOUNT_LIFETIME, 0)
+            + COALESCE(TOPPS_DIGITAL_MARVEL_SPEND_AMOUNT_LIFETIME, 0)
+            + COALESCE(TOPPS_DIGITAL_STARWARS_SPEND_AMOUNT_LIFETIME, 0)
+            + COALESCE(TOPPS_DIGITAL_WWE_SPEND_AMOUNT_LIFETIME, 0)
+        """,
+        "Commerce": "COALESCE(COMMERCE_ORDER_AMOUNT_TOTAL, 0)",
+        "FBG (Sportsbook)": "COALESCE(FBG_TRANSACTION_TOTAL, 0)",
+        "Live": "COALESCE(LIVE_TOTAL_REVENUE, 0)",
+        "Events": "COALESCE(EVENTS_ORDER_AMOUNT_TOTAL, 0)",
+        "FanApp": "COALESCE(FANAPP_COMMERCE_ORDER_AMOUNT_TOTAL, 0)",
+        "Topps.com": "COALESCE(TOPPS_COM_NET_TOTAL, 0)",
+        "Topps Digital": """
+            COALESCE(TOPPS_DIGITAL_BASEBALL_SPEND_AMOUNT_LIFETIME, 0)
+            + COALESCE(TOPPS_DIGITAL_DISNEY_SPEND_AMOUNT_LIFETIME, 0)
+            + COALESCE(TOPPS_DIGITAL_MARVEL_SPEND_AMOUNT_LIFETIME, 0)
+            + COALESCE(TOPPS_DIGITAL_STARWARS_SPEND_AMOUNT_LIFETIME, 0)
+            + COALESCE(TOPPS_DIGITAL_WWE_SPEND_AMOUNT_LIFETIME, 0)
+        """,
+        "Collect": "0"  # No revenue column for Collect
+    }
+    
+    revenue_calc = revenue_mappings.get(opco, revenue_mappings["ALL"])
+    
+    # Filter clause for OpCo
+    if opco == "ALL":
+        filter_clause = "1=1"
+    else:
+        opco_filters = {
+            "Commerce": "COMMERCE_FAN_INDICATOR = TRUE",
+            "Topps Digital": "TOPPS_DIGITAL_FAN_INDICATOR = TRUE",
+            "Topps.com": "TOPPS_COM_FAN_INDICATOR = TRUE",
+            "FBG (Sportsbook)": "FBG_FAN_INDICATOR = TRUE",
+            "FanApp": "FANAPP_FAN_INDICATOR = TRUE",
+            "Live": "LIVE_FAN_INDICATOR = TRUE",
+            "Collect": "COLLECT_FAN_INDICATOR = TRUE",
+            "Events": "EVENTS_FAN_INDICATOR = TRUE"
+        }
+        filter_clause = opco_filters.get(opco, "1=1")
+    
+    query = f"""
+    SELECT SUM({revenue_calc}) as TOTAL_REVENUE
+    FROM FANGRAPH.ADMIN.FANGRAPH
+    WHERE {filter_clause}
+    """
+    
+    result = run_query(query)
+    revenue = result['TOTAL_REVENUE'].iloc[0]
+    return float(revenue) if revenue is not None else 0.0
+
 # ============== OPCO-FILTERED QUERIES ==============
 @st.cache_data(ttl=3600, show_spinner="Fetching filtered data...")
 def get_opco_filtered_stats(opco: str):
@@ -557,7 +620,7 @@ def main():
             commerce_df = get_commerce_trends()  # Commerce data doesn't filter by OpCo
         
         nfl_fans = leagues_df[leagues_df['LEAGUE'] == 'NFL']['FAN_COUNT'].values[0] if len(leagues_df) > 0 else 0
-        total_revenue = commerce_df['REVENUE'].sum() if len(commerce_df) > 0 else 0
+        total_revenue = get_total_revenue(selected_opco)
         
         # KPI Cards
         col1, col2, col3, col4 = st.columns(4)
@@ -571,7 +634,8 @@ def main():
         with col3:
             st.metric("NFL Preference Fans", format_number(nfl_fans), delta="Top League")
         with col4:
-            st.metric("Revenue (24mo)", format_number(total_revenue, '$'), delta="Commerce Only")
+            revenue_label = "All OpCos" if selected_opco == "ALL" else selected_opco
+            st.metric("Total Revenue", format_number(total_revenue, '$'), delta=revenue_label)
         
         st.divider()
         

@@ -3,8 +3,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
-from snowflake.snowpark import Session
-from snowflake.snowpark.context import get_active_session
+import snowflake.connector
 import os
 
 # Page config
@@ -193,70 +192,75 @@ PLOTLY_LAYOUT = dict(
 
 # ============== SNOWFLAKE CONNECTION ==============
 @st.cache_resource
-def get_snowflake_session():
-    """Get Snowflake session - works both locally and in Streamlit Cloud"""
-    try:
-        # Try to get active session (for Snowflake Native Apps)
-        return get_active_session()
-    except:
-        # For local development, use connection parameters
-        connection_parameters = {
-            "account": os.getenv("SNOWFLAKE_ACCOUNT", ""),
-            "user": os.getenv("SNOWFLAKE_USER", ""),
-            "password": os.getenv("SNOWFLAKE_PASSWORD", ""),
-            "role": "SNOWFLAKE_INTELLIGENCE_ADMIN",
-            "warehouse": "FDE_DEVELOPER_3XL_WH",
-            "database": "FANGRAPH",
-            "schema": "ADMIN"
-        }
-        return Session.builder.configs(connection_parameters).create()
+def get_snowflake_connection():
+    """Get Snowflake connection using config file"""
+    conn = snowflake.connector.connect(
+        connection_name="FAN_DATA_EXCHANGE_PROD",
+        role="SNOWFLAKE_INTELLIGENCE_ADMIN",
+        warehouse="FDE_DEVELOPER_3XL_WH",
+        database="FANGRAPH",
+        schema="ADMIN"
+    )
+    return conn
 
-def get_session():
-    """Get or create Snowflake session"""
-    if 'snowflake_session' not in st.session_state:
-        st.session_state.snowflake_session = get_snowflake_session()
-    return st.session_state.snowflake_session
+def get_connection():
+    """Get or create Snowflake connection"""
+    if 'snowflake_conn' not in st.session_state:
+        st.session_state.snowflake_conn = get_snowflake_connection()
+    return st.session_state.snowflake_conn
+
+def run_query(query):
+    """Execute query and return pandas DataFrame"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(query)
+    columns = [desc[0] for desc in cursor.description]
+    data = cursor.fetchall()
+    cursor.close()
+    return pd.DataFrame(data, columns=columns)
 
 # ============== DATA QUERIES ==============
 @st.cache_data(ttl=3600, show_spinner="Fetching data from Snowflake...")
 def get_total_fans():
     """Get total fan count"""
-    session = get_session()
-    result = session.sql("SELECT COUNT(*) as cnt FROM FANGRAPH.ADMIN.FANGRAPH").collect()
-    return result[0]['CNT']
+    df = run_query("SELECT COUNT(*) as CNT FROM FANGRAPH.ADMIN.FANGRAPH")
+    return df['CNT'].iloc[0]
 
 @st.cache_data(ttl=3600, show_spinner="Fetching OpCo data...")
 def get_opco_breakdown():
-    """Get fan breakdown by OpCo"""
-    session = get_session()
+    """Get fan breakdown by OpCo - optimized single scan"""
     query = """
     SELECT 
-        'Total Fans' as OPCO, COUNT(*) as FAN_COUNT FROM FANGRAPH.ADMIN.FANGRAPH
-    UNION ALL
-    SELECT 'Commerce', SUM(CASE WHEN COMMERCE_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) FROM FANGRAPH.ADMIN.FANGRAPH
-    UNION ALL
-    SELECT 'Topps Digital', SUM(CASE WHEN TOPPS_DIGITAL_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) FROM FANGRAPH.ADMIN.FANGRAPH
-    UNION ALL
-    SELECT 'Topps.com', SUM(CASE WHEN TOPPS_COM_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) FROM FANGRAPH.ADMIN.FANGRAPH
-    UNION ALL
-    SELECT 'FBG (Sportsbook)', SUM(CASE WHEN FBG_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) FROM FANGRAPH.ADMIN.FANGRAPH
-    UNION ALL
-    SELECT 'FanApp', SUM(CASE WHEN FANAPP_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) FROM FANGRAPH.ADMIN.FANGRAPH
-    UNION ALL
-    SELECT 'Live', SUM(CASE WHEN LIVE_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) FROM FANGRAPH.ADMIN.FANGRAPH
-    UNION ALL
-    SELECT 'Collect', SUM(CASE WHEN COLLECT_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) FROM FANGRAPH.ADMIN.FANGRAPH
-    UNION ALL
-    SELECT 'Events', SUM(CASE WHEN EVENTS_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) FROM FANGRAPH.ADMIN.FANGRAPH
-    ORDER BY FAN_COUNT DESC
+        COUNT(*) as TOTAL_FANS,
+        SUM(CASE WHEN COMMERCE_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) as COMMERCE,
+        SUM(CASE WHEN TOPPS_DIGITAL_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) as TOPPS_DIGITAL,
+        SUM(CASE WHEN TOPPS_COM_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) as TOPPS_COM,
+        SUM(CASE WHEN FBG_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) as FBG,
+        SUM(CASE WHEN FANAPP_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) as FANAPP,
+        SUM(CASE WHEN LIVE_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) as LIVE,
+        SUM(CASE WHEN COLLECT_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) as COLLECT,
+        SUM(CASE WHEN EVENTS_FAN_INDICATOR = TRUE THEN 1 ELSE 0 END) as EVENTS
+    FROM FANGRAPH.ADMIN.FANGRAPH
     """
-    df = session.sql(query).to_pandas()
+    result = run_query(query).iloc[0]
+    data = [
+        {'OPCO': 'Total Fans', 'FAN_COUNT': result['TOTAL_FANS']},
+        {'OPCO': 'Commerce', 'FAN_COUNT': result['COMMERCE']},
+        {'OPCO': 'Topps Digital', 'FAN_COUNT': result['TOPPS_DIGITAL']},
+        {'OPCO': 'Topps.com', 'FAN_COUNT': result['TOPPS_COM']},
+        {'OPCO': 'FBG (Sportsbook)', 'FAN_COUNT': result['FBG']},
+        {'OPCO': 'FanApp', 'FAN_COUNT': result['FANAPP']},
+        {'OPCO': 'Live', 'FAN_COUNT': result['LIVE']},
+        {'OPCO': 'Collect', 'FAN_COUNT': result['COLLECT']},
+        {'OPCO': 'Events', 'FAN_COUNT': result['EVENTS']},
+    ]
+    df = pd.DataFrame(data)
+    df = df.sort_values('FAN_COUNT', ascending=False)
     return df
 
 @st.cache_data(ttl=3600, show_spinner="Fetching commerce data...")
 def get_commerce_trends():
     """Get 24-month commerce trends"""
-    session = get_session()
     query = """
     SELECT 
         DATE_TRUNC('MONTH', ORDER_TS) as MONTH,
@@ -268,14 +272,13 @@ def get_commerce_trends():
     GROUP BY DATE_TRUNC('MONTH', ORDER_TS)
     ORDER BY MONTH
     """
-    df = session.sql(query).to_pandas()
+    df = run_query(query)
     df['MONTH'] = pd.to_datetime(df['MONTH'])
     return df
 
 @st.cache_data(ttl=3600, show_spinner="Fetching NFL data...")
 def get_nfl_teams():
     """Get top 15 NFL teams by fan count"""
-    session = get_session()
     query = """
     SELECT 
         f.value::STRING as NFL_TEAM,
@@ -287,15 +290,13 @@ def get_nfl_teams():
     ORDER BY FAN_COUNT DESC
     LIMIT 15
     """
-    df = session.sql(query).to_pandas()
-    # Title case the team names
+    df = run_query(query)
     df['NFL_TEAM'] = df['NFL_TEAM'].str.title()
     return df
 
 @st.cache_data(ttl=3600, show_spinner="Fetching demographics...")
 def get_age_demographics():
     """Get age distribution"""
-    session = get_session()
     query = """
     SELECT 
         FANGRAPH_AGE_RANGE as AGE_RANGE,
@@ -305,33 +306,36 @@ def get_age_demographics():
     GROUP BY FANGRAPH_AGE_RANGE
     ORDER BY FAN_COUNT DESC
     """
-    df = session.sql(query).to_pandas()
+    df = run_query(query)
     return df
 
 @st.cache_data(ttl=3600, show_spinner="Fetching league data...")
 def get_league_preferences():
-    """Get league preference breakdown"""
-    session = get_session()
+    """Get league preference breakdown - optimized single scan"""
     query = """
     SELECT 
-        'NFL' as LEAGUE, SUM(CASE WHEN FANGRAPH_PREFERENCE_NFL = TRUE THEN 1 ELSE 0 END) as FAN_COUNT FROM FANGRAPH.ADMIN.FANGRAPH
-    UNION ALL
-    SELECT 'MLB', SUM(CASE WHEN FANGRAPH_PREFERENCE_MLB = TRUE THEN 1 ELSE 0 END) FROM FANGRAPH.ADMIN.FANGRAPH
-    UNION ALL
-    SELECT 'NBA', SUM(CASE WHEN FANGRAPH_PREFERENCE_NBA = TRUE THEN 1 ELSE 0 END) FROM FANGRAPH.ADMIN.FANGRAPH
-    UNION ALL
-    SELECT 'NCAA', SUM(CASE WHEN FANGRAPH_PREFERENCE_NCAA = TRUE THEN 1 ELSE 0 END) FROM FANGRAPH.ADMIN.FANGRAPH
-    UNION ALL
-    SELECT 'NHL', SUM(CASE WHEN FANGRAPH_PREFERENCE_NHL = TRUE THEN 1 ELSE 0 END) FROM FANGRAPH.ADMIN.FANGRAPH
-    ORDER BY FAN_COUNT DESC
+        SUM(CASE WHEN FANGRAPH_PREFERENCE_NFL = TRUE THEN 1 ELSE 0 END) as NFL,
+        SUM(CASE WHEN FANGRAPH_PREFERENCE_MLB = TRUE THEN 1 ELSE 0 END) as MLB,
+        SUM(CASE WHEN FANGRAPH_PREFERENCE_NBA = TRUE THEN 1 ELSE 0 END) as NBA,
+        SUM(CASE WHEN FANGRAPH_PREFERENCE_NCAA = TRUE THEN 1 ELSE 0 END) as NCAA,
+        SUM(CASE WHEN FANGRAPH_PREFERENCE_NHL = TRUE THEN 1 ELSE 0 END) as NHL
+    FROM FANGRAPH.ADMIN.FANGRAPH
     """
-    df = session.sql(query).to_pandas()
+    result = run_query(query).iloc[0]
+    data = [
+        {'LEAGUE': 'NFL', 'FAN_COUNT': result['NFL']},
+        {'LEAGUE': 'MLB', 'FAN_COUNT': result['MLB']},
+        {'LEAGUE': 'NBA', 'FAN_COUNT': result['NBA']},
+        {'LEAGUE': 'NCAA', 'FAN_COUNT': result['NCAA']},
+        {'LEAGUE': 'NHL', 'FAN_COUNT': result['NHL']},
+    ]
+    df = pd.DataFrame(data)
+    df = df.sort_values('FAN_COUNT', ascending=False)
     return df
 
 @st.cache_data(ttl=3600, show_spinner="Fetching state data...")
 def get_geo_data():
     """Get top 20 states by fan count"""
-    session = get_session()
     query = """
     SELECT 
         FANGRAPH_STATE as STATE,
@@ -342,15 +346,13 @@ def get_geo_data():
     ORDER BY FAN_COUNT DESC
     LIMIT 20
     """
-    df = session.sql(query).to_pandas()
+    df = run_query(query)
     return df
 
 # ============== OPCO-FILTERED QUERIES ==============
 @st.cache_data(ttl=3600, show_spinner="Fetching filtered data...")
 def get_opco_filtered_stats(opco: str):
     """Get stats filtered by OpCo"""
-    session = get_session()
-    
     if opco == "ALL":
         filter_clause = "1=1"
     else:
@@ -368,28 +370,26 @@ def get_opco_filtered_stats(opco: str):
     
     # Total fans for this OpCo
     total_query = f"SELECT COUNT(*) as CNT FROM FANGRAPH.ADMIN.FANGRAPH WHERE {filter_clause}"
-    total = session.sql(total_query).collect()[0]['CNT']
+    total = run_query(total_query)['CNT'].iloc[0]
     
-    # League breakdown for this OpCo
+    # League breakdown for this OpCo - optimized single scan
     league_query = f"""
     SELECT 
-        'NFL' as LEAGUE, SUM(CASE WHEN FANGRAPH_PREFERENCE_NFL = TRUE THEN 1 ELSE 0 END) as FAN_COUNT 
+        SUM(CASE WHEN FANGRAPH_PREFERENCE_NFL = TRUE THEN 1 ELSE 0 END) as NFL,
+        SUM(CASE WHEN FANGRAPH_PREFERENCE_MLB = TRUE THEN 1 ELSE 0 END) as MLB,
+        SUM(CASE WHEN FANGRAPH_PREFERENCE_NBA = TRUE THEN 1 ELSE 0 END) as NBA,
+        SUM(CASE WHEN FANGRAPH_PREFERENCE_NCAA = TRUE THEN 1 ELSE 0 END) as NCAA,
+        SUM(CASE WHEN FANGRAPH_PREFERENCE_NHL = TRUE THEN 1 ELSE 0 END) as NHL
     FROM FANGRAPH.ADMIN.FANGRAPH WHERE {filter_clause}
-    UNION ALL
-    SELECT 'MLB', SUM(CASE WHEN FANGRAPH_PREFERENCE_MLB = TRUE THEN 1 ELSE 0 END) 
-    FROM FANGRAPH.ADMIN.FANGRAPH WHERE {filter_clause}
-    UNION ALL
-    SELECT 'NBA', SUM(CASE WHEN FANGRAPH_PREFERENCE_NBA = TRUE THEN 1 ELSE 0 END) 
-    FROM FANGRAPH.ADMIN.FANGRAPH WHERE {filter_clause}
-    UNION ALL
-    SELECT 'NCAA', SUM(CASE WHEN FANGRAPH_PREFERENCE_NCAA = TRUE THEN 1 ELSE 0 END) 
-    FROM FANGRAPH.ADMIN.FANGRAPH WHERE {filter_clause}
-    UNION ALL
-    SELECT 'NHL', SUM(CASE WHEN FANGRAPH_PREFERENCE_NHL = TRUE THEN 1 ELSE 0 END) 
-    FROM FANGRAPH.ADMIN.FANGRAPH WHERE {filter_clause}
-    ORDER BY FAN_COUNT DESC
     """
-    leagues_df = session.sql(league_query).to_pandas()
+    result = run_query(league_query).iloc[0]
+    leagues_df = pd.DataFrame([
+        {'LEAGUE': 'NFL', 'FAN_COUNT': result['NFL']},
+        {'LEAGUE': 'MLB', 'FAN_COUNT': result['MLB']},
+        {'LEAGUE': 'NBA', 'FAN_COUNT': result['NBA']},
+        {'LEAGUE': 'NCAA', 'FAN_COUNT': result['NCAA']},
+        {'LEAGUE': 'NHL', 'FAN_COUNT': result['NHL']},
+    ]).sort_values('FAN_COUNT', ascending=False)
     
     # Age breakdown for this OpCo
     age_query = f"""
@@ -401,7 +401,7 @@ def get_opco_filtered_stats(opco: str):
     GROUP BY FANGRAPH_AGE_RANGE
     ORDER BY FAN_COUNT DESC
     """
-    age_df = session.sql(age_query).to_pandas()
+    age_df = run_query(age_query)
     
     return {
         'total': total,
@@ -428,28 +428,109 @@ def clear_cache():
 
 # ============== MAIN APP ==============
 def main():
-    # Header with logo and refresh button
-    col1, col2, col3 = st.columns([1, 4, 1])
+    # Load initial data for header stats
+    try:
+        total_fans_count = get_total_fans()
+        opco_df = get_opco_breakdown()
+        commerce_fans = opco_df[opco_df['OPCO'] == 'Commerce']['FAN_COUNT'].values[0]
+    except:
+        total_fans_count = 0
+        commerce_fans = 0
     
-    with col1:
-        # Fanatics logo as styled HTML (reliable fallback)
-        st.markdown("""
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <div style="background: white; padding: 8px 16px; border-radius: 8px;">
-                <span style="font-family: 'Arial Black', sans-serif; font-size: 1.5rem; font-weight: 900; color: #E31837; letter-spacing: -1px;">FANATICS</span>
+    # Custom header matching static HTML style
+    st.markdown(f"""
+    <style>
+        .custom-header {{
+            background: linear-gradient(90deg, #E31837 0%, #B71430 100%);
+            padding: 1.5rem 2rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            box-shadow: 0 4px 20px rgba(227, 24, 55, 0.3);
+        }}
+        .header-content {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }}
+        .logo-section {{
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }}
+        .logo-section img {{
+            height: 48px;
+            border-radius: 8px;
+        }}
+        .logo-text h1 {{
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin: 0;
+            color: white;
+        }}
+        .logo-text span {{
+            font-size: 0.85rem;
+            opacity: 0.9;
+            font-weight: 400;
+            color: white;
+        }}
+        .header-stats {{
+            display: flex;
+            gap: 2rem;
+        }}
+        .header-stat {{
+            text-align: right;
+        }}
+        .header-stat-value {{
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: white;
+        }}
+        .header-stat-label {{
+            font-size: 0.75rem;
+            opacity: 0.85;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: white;
+        }}
+    </style>
+    <div class="custom-header">
+        <div class="header-content">
+            <div class="logo-section">
+                <div class="logo-text">
+                    <h1>FanGraph Insights</h1>
+                    <span>Powered by Snowflake Cortex Agent</span>
+                </div>
+            </div>
+            <div class="header-stats">
+                <div class="header-stat">
+                    <div class="header-stat-value">{format_number(total_fans_count)}</div>
+                    <div class="header-stat-label">Total Fans</div>
+                </div>
+                <div class="header-stat">
+                    <div class="header-stat-value">{format_number(commerce_fans)}</div>
+                    <div class="header-stat-label">Commerce Fans</div>
+                </div>
+                <div class="header-stat">
+                    <div class="header-stat-value">8</div>
+                    <div class="header-stat-label">OpCos</div>
+                </div>
             </div>
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """, unsafe_allow_html=True)
     
-    with col2:
-        st.markdown("# FanGraph Insights Dashboard")
-        st.markdown("*Interactive Analytics from Snowflake Cortex Agent*")
-    
-    with col3:
+    # Refresh button in sidebar
+    with st.sidebar:
+        st.image("fanatics-logo.png", width=150)
+        st.markdown("---")
         if st.button("🔄 Refresh Data", type="primary", use_container_width=True):
             clear_cache()
-    
-    st.divider()
+        st.markdown("---")
+        st.markdown("**Data Source:** Snowflake")
+        st.markdown("**Last Refresh:** Live")
     
     # OpCo filter dropdown (shown on Overview and OpCo tabs)
     opco_options = ["ALL", "Commerce", "Topps Digital", "Topps.com", "FBG (Sportsbook)", "FanApp", "Live", "Collect", "Events"]
